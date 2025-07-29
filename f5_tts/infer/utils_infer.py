@@ -89,45 +89,31 @@ def chunk_text(text, max_chars=135):
 
 
 # load vocoder
-def load_vocoder(vocoder_name="vocos", is_local=False, local_path="", device=device, hf_cache_dir=None):
+def load_vocoder(vocoder_name="vocos", is_local=False, local_path="", device="cpu", hf_cache_dir=None):
     if vocoder_name == "vocos":
-        # vocoder = Vocos.from_pretrained("charactr/vocos-mel-24khz").to(device)
-        if is_local:
-            print(f"Load vocos from local path {local_path}")
-            config_path = f"{local_path}/config.yaml"
-            model_path = f"{local_path}/pytorch_model.bin"
-        else:
-            print("Download Vocos from huggingface charactr/vocos-mel-24khz")
-            repo_id = "charactr/vocos-mel-24khz"
-            config_path = hf_hub_download(repo_id=repo_id, cache_dir=hf_cache_dir, filename="config.yaml")
-            model_path = hf_hub_download(repo_id=repo_id, cache_dir=hf_cache_dir, filename="pytorch_model.bin")
-        vocoder = Vocos.from_hparams(config_path)
-        state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
-        from vocos.feature_extractors import EncodecFeatures
+        from vocos import Vocos
+        print("Loading vocoder from pretrained Hugging Face repo: charactr/vocos-mel-24khz")
+        vocoder = Vocos.from_pretrained("charactr/vocos-mel-24khz")
+        vocoder = vocoder.eval()
+        return vocoder
 
-        if isinstance(vocoder.feature_extractor, EncodecFeatures):
-            encodec_parameters = {
-                "feature_extractor.encodec." + key: value
-                for key, value in vocoder.feature_extractor.encodec.state_dict().items()
-            }
-            state_dict.update(encodec_parameters)
-        vocoder.load_state_dict(state_dict)
-        vocoder = vocoder.eval().to(device)
     elif vocoder_name == "bigvgan":
         try:
             from third_party.BigVGAN import bigvgan
         except ImportError:
             print("You need to follow the README to init submodule and change the BigVGAN source code.")
+        
         if is_local:
             """download from https://huggingface.co/nvidia/bigvgan_v2_24khz_100band_256x/tree/main"""
             vocoder = bigvgan.BigVGAN.from_pretrained(local_path, use_cuda_kernel=False)
         else:
+            from huggingface_hub import snapshot_download
             local_path = snapshot_download(repo_id="nvidia/bigvgan_v2_24khz_100band_256x", cache_dir=hf_cache_dir)
             vocoder = bigvgan.BigVGAN.from_pretrained(local_path, use_cuda_kernel=False)
 
         vocoder.remove_weight_norm()
         vocoder = vocoder.eval().to(device)
-    return vocoder
+        return vocoder
 
 
 # load asr pipeline
@@ -252,7 +238,7 @@ def load_model(
             method=ode_method,
         ),
         vocab_char_map=vocab_char_map,
-    ).to(device)
+    )
 
     dtype = torch.float32 if mel_spec_type == "bigvgan" else None
     # model = load_checkpoint(model, ckpt_path, device, dtype=dtype, use_ema=use_ema)
